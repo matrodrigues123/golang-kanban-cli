@@ -1,9 +1,11 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-
 	"os"
+
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -98,6 +100,11 @@ func (m *Model) moveTaskToNext() {
 
 }
 
+func (m *Model) deleteTask() {
+	selectedTask := m.lists[m.focused].SelectedItem().(Task)
+	m.lists[selectedTask.status].RemoveItem(m.lists[m.focused].Index())
+}
+
 func (m *Model) focusOnNextList() {
 	if m.focused == done {
 		m.focused = todo
@@ -114,30 +121,53 @@ func (m *Model) focusOnPrevList() {
 }
 
 func (m *Model) initLists(width, height int) {
+	// Open a database connection
+	db, err := sql.Open("sqlite3", "kanban.db")
+	if err != nil {
+		fmt.Println("Error opening database:", err)
+		return
+	}
+	defer db.Close()
+
+	// Query the database and retrieve data from the "tasks" table
+	rows, err := db.Query("SELECT * FROM tasks")
+	if err != nil {
+		fmt.Println("Error querying database:", err)
+		return
+	}
+	defer rows.Close()
+
+	// init lists
 	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height/2)
 	defaultList.SetShowHelp(false)
 	m.lists = []list.Model{defaultList, defaultList, defaultList}
 
-	// init To Do
 	m.lists[todo].Title = "To Do"
-	m.lists[todo].SetItems([]list.Item{
-		Task{status: todo, title: "estudar EST", description: "materia do prof rabanete"},
-		Task{status: todo, title: "estudar ELE", description: "materia do governador da bahia"},
-	})
-
-	// init in progress
 	m.lists[inProgress].Title = "In Progress"
-	m.lists[inProgress].SetItems([]list.Item{
-		Task{status: inProgress, title: "study go", description: "learn go syntax"},
-		Task{status: inProgress, title: "study bubbletea", description: "learning go's bubbletea lib"},
-	})
-
-	// init done
 	m.lists[done].Title = "Done"
-	m.lists[done].SetItems([]list.Item{
-		Task{status: done, title: "leetcode grind", description: "get ready for the tech interview"},
-		Task{status: done, title: "code more", description: "be a more productive programmer"},
-	})
+
+	// m.lists[task.status].InsertItem(len(m.lists[task.status].Items()), list.Item(task))
+	// Iterate over the rows and add to the model lists
+	for rows.Next() {
+		var id int
+		var title string
+		var description string
+		var statusVal int
+		err := rows.Scan(&id, &title, &description, &statusVal)
+		if err != nil {
+			fmt.Println("Error scanning row:", err)
+			return
+		}
+		task := NewTask(status(statusVal), title, description)
+		m.lists[task.status].InsertItem(len(m.lists[task.status].Items()), list.Item(task))
+	}
+
+	// Check for any errors that may have occurred during iteration
+	err = rows.Err()
+	if err != nil {
+		fmt.Println("Error iterating over rows:", err)
+		return
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -167,6 +197,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusOnPrevList()
 		case "enter":
 			m.moveTaskToNext()
+		case "d":
+			m.deleteTask()
 		case "n":
 			models[mainModel] = m // save state of current model
 			models[formModel] = NewForm(m.focused)
