@@ -48,13 +48,14 @@ var (
 /* CUSTOM ITEM */
 
 type Task struct {
+	id          int64
 	status      status
 	title       string
 	description string
 }
 
-func NewTask(status status, title, description string) Task {
-	return Task{status: status, title: title, description: description}
+func NewTask(id int64, status status, title, description string) Task {
+	return Task{id: id, status: status, title: title, description: description}
 }
 
 func (t *Task) increaseTaskStatus() {
@@ -96,7 +97,17 @@ func (m *Model) moveTaskToNext() {
 	selectedTask := m.lists[m.focused].SelectedItem().(Task)
 	m.lists[selectedTask.status].RemoveItem(m.lists[m.focused].Index())
 	selectedTask.increaseTaskStatus()
-	m.lists[selectedTask.status].InsertItem(len(m.lists[selectedTask.status].Items())-1, list.Item(selectedTask))
+	m.lists[selectedTask.status].InsertItem(len(m.lists[selectedTask.status].Items()), list.Item(selectedTask))
+	// Open a database connection
+	db, _ := sql.Open("sqlite3", "kanban.db")
+	defer db.Close()
+
+	// Prepare the SQL statement for updating data
+	stmt, _ := db.Prepare("UPDATE tasks SET status=? WHERE id=?")
+	defer stmt.Close()
+
+	// Execute the prepared statement with the values to update
+	stmt.Exec(selectedTask.status, selectedTask.id)
 
 }
 
@@ -146,10 +157,9 @@ func (m *Model) initLists(width, height int) {
 	m.lists[inProgress].Title = "In Progress"
 	m.lists[done].Title = "Done"
 
-	// m.lists[task.status].InsertItem(len(m.lists[task.status].Items()), list.Item(task))
 	// Iterate over the rows and add to the model lists
 	for rows.Next() {
-		var id int
+		var id int64
 		var title string
 		var description string
 		var statusVal int
@@ -158,7 +168,7 @@ func (m *Model) initLists(width, height int) {
 			fmt.Println("Error scanning row:", err)
 			return
 		}
-		task := NewTask(status(statusVal), title, description)
+		task := NewTask(id, status(statusVal), title, description)
 		m.lists[task.status].InsertItem(len(m.lists[task.status].Items()), list.Item(task))
 	}
 
@@ -267,7 +277,20 @@ func NewForm(focused status) *Form {
 }
 
 func (m Form) CreateTask() tea.Msg {
-	return NewTask(m.focused, m.title.Value(), m.description.Value())
+
+	// Open a database connection
+	db, _ := sql.Open("sqlite3", "kanban.db")
+	defer db.Close()
+
+	// Prepare the SQL statement for inserting data
+	stmt, _ := db.Prepare("INSERT INTO tasks(status, title, description) VALUES(?,?,?)")
+	defer stmt.Close()
+
+	// Execute the prepared statement with the values to insert
+	res, _ := stmt.Exec(m.focused, m.title.Value(), m.description.Value())
+	id, _ := res.LastInsertId()
+
+	return NewTask(id, m.focused, m.title.Value(), m.description.Value())
 }
 
 func (m Form) Init() tea.Cmd {
