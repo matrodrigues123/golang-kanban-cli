@@ -15,7 +15,7 @@ import (
 )
 
 /* MODEL MANAGEMENT */
-const divisor = 4
+const divisor = 3
 
 type status int
 
@@ -114,6 +114,17 @@ func (m *Model) moveTaskToNext() {
 func (m *Model) deleteTask() {
 	selectedTask := m.lists[m.focused].SelectedItem().(Task)
 	m.lists[selectedTask.status].RemoveItem(m.lists[m.focused].Index())
+
+	// Open a database connection
+	db, _ := sql.Open("sqlite3", "kanban.db")
+	defer db.Close()
+
+	// Prepare the SQL statement for updating data
+	stmt, _ := db.Prepare("DELETE FROM tasks WHERE id=?")
+	defer stmt.Close()
+
+	// Execute the prepared statement with the values to update
+	stmt.Exec(selectedTask.id)
 }
 
 func (m *Model) focusOnNextList() {
