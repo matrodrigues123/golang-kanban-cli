@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	keymap "kanban-cli/keymap"
+
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -82,6 +86,7 @@ func (t Task) Description() string {
 /* MAIN MODEL */
 
 type Model struct {
+	help     help.Model
 	loaded   bool
 	focused  status
 	lists    []list.Model
@@ -199,6 +204,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// message that gives dimensions of the terminal
 	case tea.WindowSizeMsg:
+		m.help.Width = msg.Width
 		if !m.loaded {
 			columnStyle.Width(msg.Width / divisor)
 			columnStyle.Height(msg.Height / 2)
@@ -208,19 +214,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loaded = true
 		}
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
+		switch {
+		case key.Matches(msg, keymap.DefaultKeyMap.Quit):
 			m.quitting = true
 			return m, tea.Quit
-		case "right":
+		case key.Matches(msg, keymap.DefaultKeyMap.Help):
+			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, keymap.DefaultKeyMap.Right):
 			m.focusOnNextList()
-		case "left":
+		case key.Matches(msg, keymap.DefaultKeyMap.Left):
 			m.focusOnPrevList()
-		case "enter":
+		case key.Matches(msg, keymap.DefaultKeyMap.MoveTaskNext):
 			m.moveTaskToNext()
-		case "d":
+		case key.Matches(msg, keymap.DefaultKeyMap.DeleteTask):
 			m.deleteTask()
-		case "n":
+		case key.Matches(msg, keymap.DefaultKeyMap.AddTask):
 			models[mainModel] = m // save state of current model
 			models[formModel] = NewForm(m.focused)
 			return models[formModel].Update(nil)
@@ -235,6 +243,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	helpView := m.help.View(keymap.DefaultKeyMap)
 	if m.quitting {
 		return ""
 	}
@@ -250,21 +259,21 @@ func (m Model) View() string {
 				columnStyle.Render(todoView),
 				focusedStyle.Render(inProgressView),
 				columnStyle.Render(doneView),
-			)
+			) + helpView
 		case done:
 			return lipgloss.JoinHorizontal(
 				lipgloss.Left,
 				columnStyle.Render(todoView),
 				columnStyle.Render(inProgressView),
 				focusedStyle.Render(doneView),
-			)
+			) + helpView
 		default:
 			return lipgloss.JoinHorizontal(
 				lipgloss.Left,
 				focusedStyle.Render(todoView),
 				columnStyle.Render(inProgressView),
 				columnStyle.Render(doneView),
-			)
+			) + helpView
 		}
 	} else {
 		return "loading..."
